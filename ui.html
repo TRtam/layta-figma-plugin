@@ -1,0 +1,7 @@
+<textarea id="textarea"
+  style="width: 100%; height: 100%; white-space: nowrap; overflow-wrap: normal; overflow: auto"></textarea>
+<script>
+  onmessage = ({ data: { pluginMessage } }) => {
+    document.getElementById("textarea").value = pluginMessage
+  }
+</script>
