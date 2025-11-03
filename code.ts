@@ -90,6 +90,7 @@ const getTextFont = (figmaNode: TextNode): [string, number] => {
   } else {
     const segments = figmaNode.getStyledTextSegments(['fontName', 'fontSize']);
     const first = segments[0];
+
     return [`${first.fontName.family}-${first.fontName.style.replace(/\s/g, "")}.ttf`, first.fontSize * 0.75];
   }
 }
@@ -103,19 +104,24 @@ const transpile = (object: any, indentLevel = 0): string => {
     if (typeof value === "boolean") return value ? "true" : "false";
     if (typeof value === "number") return value.toString();
     if (typeof value === "string") return `"${value.replace(/"/g, '\\"')}"`;
+
     if (isArray(value)) {
       if (value.length === 0) return "{}";
+
       const items = value.map(v => serialize(v, level + 1));
       return `{\n${indent(level + 1)}${items.join(`,\n${indent(level + 1)}`)}\n${indent(level)}}`;
     }
+
     if (typeof value === "object") {
       const entries = Object.entries(value).map(([k, v]) => {
         const key = /^[aZAZ][aZAZ09]*$/.test(k) ? k : `["${k}"]`;
         return `${key} = ${serialize(v, level + 1)}`;
       });
+
       if (entries.length === 0) return "{}";
       return `{\n${indent(level + 1)}${entries.join(`,\n${indent(level + 1)}`)}\n${indent(level)}}`;
     }
+
     throw new Error(`Unsupported type: ${typeof value}`);
   }
 
@@ -179,7 +185,7 @@ const createNode = async (figmaNode: SceneNode, parentHasLayout: boolean = false
   const borderRadius = getBorderRadiusProps(figmaNode);
   const padding = getPaddingProps(figmaNode);
 
-  if (["FRAME", "GROUP", "COMPONENT", "INSTANCE"].includes(figmaNode.type) && "children" in figmaNode && figmaNode.children.every(child => child.type === "VECTOR")) {
+  if (["FRAME", "GROUP", "COMPONENT", "INSTANCE"].includes(figmaNode.type) && "children" in figmaNode && figmaNode.children.every(child => ["RECTANGLE", "LINE", "ARROW", "ELLIPSE", "POLYGON", "STAR", "VECTOR"].includes(child.type))) {
     return {
       constructor: "Layta.Image",
       id: figmaNode.name,
@@ -189,7 +195,6 @@ const createNode = async (figmaNode: SceneNode, parentHasLayout: boolean = false
       top,
       width,
       height,
-      foregroundColor: fillColor,
       material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
     };
   }
@@ -209,7 +214,7 @@ const createNode = async (figmaNode: SceneNode, parentHasLayout: boolean = false
       gap,
       width,
       height,
-      fillColor,
+      backgroundColor: fillColor,
       strokeColor,
       ...strokeWeight,
       ...borderRadius,
@@ -313,6 +318,71 @@ const createNode = async (figmaNode: SceneNode, parentHasLayout: boolean = false
       foregroundColor: getTextColor(figmaNode),
       font: `Layta.dxCreateFont("${fontName}", ${fontSize}, false, "cleartype_natural") or "default"`,
       wordWrap: figmaNode.textAutoResize === "HEIGHT"
+    };
+  }
+  else if (figmaNode.type === "LINE") {
+    return {
+      constructor: "Layta.Image",
+      id: figmaNode.name,
+      visible: figmaNode.visible,
+      position,
+      left,
+      top,
+      width,
+      height,
+      material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
+    };
+  }
+  else if (figmaNode.type === "ELLIPSE") {
+    return {
+      constructor: "Layta.Image",
+      id: figmaNode.name,
+      visible: figmaNode.visible,
+      position,
+      left,
+      top,
+      width,
+      height,
+      material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
+    };
+  }
+  else if (figmaNode.type === "POLYGON") {
+    return {
+      constructor: "Layta.Image",
+      id: figmaNode.name,
+      visible: figmaNode.visible,
+      position,
+      left,
+      top,
+      width,
+      height,
+      material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
+    };
+  }
+  else if (figmaNode.type === "STAR") {
+    return {
+      constructor: "Layta.Image",
+      id: figmaNode.name,
+      visible: figmaNode.visible,
+      position,
+      left,
+      top,
+      width,
+      height,
+      material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
+    };
+  }
+  else if (figmaNode.type === "VECTOR") {
+    return {
+      constructor: "Layta.Image",
+      id: figmaNode.name,
+      visible: figmaNode.visible,
+      position,
+      left,
+      top,
+      width,
+      height,
+      material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
     };
   }
   else {
