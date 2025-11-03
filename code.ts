@@ -140,9 +140,9 @@ const safelyExport = async (figmaNode: SceneNode): Promise<string> => {
   return content;
 }
 
-const createNode = async (figmaNode: SceneNode, parentIsFrame: boolean = false, parentIsMainAxisRow: boolean = true, parentStretchItems: boolean = true): Promise<object> => {
+const createNode = async (figmaNode: SceneNode, parentHasLayout: boolean = false, parentIsMainAxisRow: boolean = true, parentStretchItems: boolean = true): Promise<object> => {
   const layoutPositioning = "layoutPositioning" in figmaNode ? figmaNode.layoutPositioning : "AUTO";
-  const position = (!parentIsFrame || layoutPositioning === "ABSOLUTE") ? "absolute" : "relative";
+  const position = (!parentHasLayout || layoutPositioning === "ABSOLUTE") ? "absolute" : "relative";
 
   let left;
   let top;
@@ -152,7 +152,7 @@ const createNode = async (figmaNode: SceneNode, parentIsFrame: boolean = false, 
     top = figmaNode.y;
   }
 
-  const layoutMode = "layoutMode" in figmaNode ? figmaNode.layoutMode : "row";
+  const layoutMode = "layoutMode" in figmaNode ? figmaNode.layoutMode : "NONE";
   const flexDirection = layoutMode === "HORIZONTAL" && "row" || layoutMode === "VERTICAL" && "column";
 
   const layoutWrap = "layoutWrap" in figmaNode ? figmaNode.layoutWrap : "NO_WRAP";
@@ -218,7 +218,7 @@ const createNode = async (figmaNode: SceneNode, parentIsFrame: boolean = false, 
 
     for (const figmaChild of figmaNode.children) {
       try {
-        node.children.push(await createNode(figmaChild, true, flexDirection === "row", true));
+        node.children.push(await createNode(figmaChild, layoutMode !== "NONE", flexDirection === "row", true));
       } catch (e) {
         console.log(e);
       }
