@@ -9,7 +9,7 @@ const packColor = (r: number, g: number, b: number, a: number = 1): number => {
   return (A << 24) | (R << 16) | (G << 8) | B;
 }
 
-const getBackgroundColor = (figmaNode: SceneNode): number | undefined => {
+const getFillColor = (figmaNode: SceneNode): number | undefined => {
   if (!("fills" in figmaNode)) return;
 
   const fills = figmaNode.fills as Paint[];
@@ -19,8 +19,10 @@ const getBackgroundColor = (figmaNode: SceneNode): number | undefined => {
   return packColor(solid.color.r, solid.color.g, solid.color.b, solid.opacity);
 }
 
-const getBorderRadiusProps = (figmaNode: RectangleNode | FrameNode | InstanceNode): Record<string, number> => {
-  const { topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius } = figmaNode;
+const getBorderRadiusProps = (figmaNode: SceneNode): Record<string, number> => {
+  if (!("topLeftRadius" in figmaNode)) return {};
+
+  const { topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius } = figmaNode as RectangleNode | FrameNode | ComponentNode | InstanceNode;
   if (topLeftRadius === topRightRadius && topRightRadius === bottomLeftRadius && bottomLeftRadius === bottomRightRadius && topLeftRadius > 0) return { borderRadius: topLeftRadius };
 
   const props: Record<string, number> = {};
@@ -32,7 +34,7 @@ const getBorderRadiusProps = (figmaNode: RectangleNode | FrameNode | InstanceNod
   return props;
 }
 
-const getStrokeColor = (figmaNode: RectangleNode | FrameNode | InstanceNode): number | undefined => {
+const getStrokeColor = (figmaNode: SceneNode): number | undefined => {
   if (!("strokes" in figmaNode)) return;
 
   const strokes = figmaNode.strokes as Paint[];
@@ -42,8 +44,10 @@ const getStrokeColor = (figmaNode: RectangleNode | FrameNode | InstanceNode): nu
   return packColor(solid.color.r, solid.color.g, solid.color.b, solid.opacity);
 }
 
-const getStrokeWeightProps = (figmaNode: RectangleNode | FrameNode | InstanceNode): Record<string, number> => {
-  const { strokeLeftWeight, strokeTopWeight, strokeRightWeight, strokeBottomWeight } = figmaNode;
+const getStrokeWeightProps = (figmaNode: SceneNode): Record<string, number> => {
+  if (!("strokeLeftWeight" in figmaNode)) return {};
+
+  const { strokeLeftWeight, strokeTopWeight, strokeRightWeight, strokeBottomWeight } = figmaNode as RectangleNode | FrameNode | ComponentNode | InstanceNode;
   if (strokeLeftWeight === strokeTopWeight && strokeTopWeight === strokeRightWeight && strokeRightWeight === strokeBottomWeight && strokeLeftWeight > 0) return { strokeWeight: strokeLeftWeight };
 
   const props: Record<string, number> = {};
@@ -55,8 +59,10 @@ const getStrokeWeightProps = (figmaNode: RectangleNode | FrameNode | InstanceNod
   return props;
 }
 
-const getPaddingProps = (figmaNode: FrameNode): Record<string, number> => {
-  const { paddingLeft, paddingTop, paddingRight, paddingBottom } = figmaNode;
+const getPaddingProps = (figmaNode: SceneNode): Record<string, number> => {
+  if (!("paddingLeft" in figmaNode)) return {};
+
+  const { paddingLeft, paddingTop, paddingRight, paddingBottom } = figmaNode as FrameNode | ComponentNode | InstanceNode;
   if (paddingLeft === paddingTop && paddingTop === paddingRight && paddingRight === paddingBottom && paddingLeft > 0) return { padding: paddingLeft };
 
   const props: Record<string, number> = {};
@@ -134,52 +140,68 @@ const safelyExport = async (figmaNode: SceneNode): Promise<string> => {
   return content;
 }
 
-const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = true, parentStretchItems: boolean = true): Promise<object> => {
+const createNode = async (figmaNode: SceneNode, parentIsFrame: boolean = false, parentIsMainAxisRow: boolean = true, parentStretchItems: boolean = true): Promise<object> => {
+  const layoutPositioning = "layoutPositioning" in figmaNode ? figmaNode.layoutPositioning : "AUTO";
+  const position = (!parentIsFrame || layoutPositioning === "ABSOLUTE") ? "absolute" : "relative";
+
+  let left;
+  let top;
+
+  if (position === "absolute") {
+    left = figmaNode.x;
+    top = figmaNode.y;
+  }
+
+  const layoutMode = "layoutMode" in figmaNode ? figmaNode.layoutMode : "row";
+  const flexDirection = layoutMode === "HORIZONTAL" && "row" || layoutMode === "VERTICAL" && "column";
+
+  const layoutWrap = "layoutWrap" in figmaNode ? figmaNode.layoutWrap : "NO_WRAP";
+  const flexWrap = layoutWrap === "NO_WRAP" && "nowrap" || layoutWrap === "WRAP" && "wrap";
+
+  const primaryAxisAlignItems = "primaryAxisAlignItems" in figmaNode ? figmaNode.primaryAxisAlignItems : "MIN";
+  const justifyContent = primaryAxisAlignItems === "MIN" && "flex-start" || primaryAxisAlignItems === "MAX" && "flex-end" || primaryAxisAlignItems === "CENTER" && "center" || primaryAxisAlignItems === "SPACE_BETWEEN" && "space-between";
+
+  const counterAxisAlignItems = "counterAxisAlignItems" in figmaNode ? figmaNode.counterAxisAlignItems : "MIN";
+  const alignItems = counterAxisAlignItems === "MIN" && "stretch" || counterAxisAlignItems === "MAX" && "flex-end" || counterAxisAlignItems === "CENTER" && "center";
+
+  const gap = "itemSpacing" in figmaNode ? figmaNode.itemSpacing : undefined;
+
+  const layoutSizingHorizontal = "layoutSizingHorizontal" in figmaNode ? figmaNode.layoutSizingHorizontal : "FIXED";
+  const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
+
+  const layoutSizingVertical = "layoutSizingVertical" in figmaNode ? figmaNode.layoutSizingVertical : "FIXED";
+  const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
+
+  const fillColor = getFillColor(figmaNode);
+
+  const strokeColor = getStrokeColor(figmaNode);
+  const strokeWeight = getStrokeWeightProps(figmaNode);
+  const borderRadius = getBorderRadiusProps(figmaNode);
+  const padding = getPaddingProps(figmaNode);
+
   if (["FRAME", "GROUP", "COMPONENT", "INSTANCE"].includes(figmaNode.type) && "children" in figmaNode && figmaNode.children.every(child => child.type === "VECTOR")) {
-    const layoutSizingHorizontal = "layoutSizingHorizontal" in figmaNode ? figmaNode.layoutSizingHorizontal : "FIXED";
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = "layoutSizingVertical" in figmaNode ? figmaNode.layoutSizingVertical : "FIXED";
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
-    const image = {
+    return {
       constructor: "Layta.Image",
       id: figmaNode.name,
       visible: figmaNode.visible,
+      position,
+      left,
+      top,
       width,
       height,
-      foregroundColor: getBackgroundColor(figmaNode),
-      material: `svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
-    }
-
-    return image;
+      foregroundColor: fillColor,
+      material: `Layta.svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
+    };
   }
   else if (figmaNode.type === "FRAME") {
-    const layoutMode = figmaNode.layoutMode;
-    const flexDirection = layoutMode === "HORIZONTAL" && "row" || layoutMode === "VERTICAL" && "column";
-
-    const layoutWrap = figmaNode.layoutWrap;
-    const flexWrap = layoutWrap === "NO_WRAP" && "nowrap" || layoutWrap === "WRAP" && "wrap";
-
-    const primaryAxisAlignItems = figmaNode.primaryAxisAlignItems;
-    const justifyContent = primaryAxisAlignItems === "MIN" && "flex-start" || primaryAxisAlignItems === "MAX" && "flex-end" || primaryAxisAlignItems === "CENTER" && "center" || primaryAxisAlignItems === "SPACE_BETWEEN" && "space-between";
-
-    const counterAxisAlignItems = figmaNode.counterAxisAlignItems;
-    const alignItems = counterAxisAlignItems === "MIN" && "stretch" || counterAxisAlignItems === "MAX" && "flex-end" || counterAxisAlignItems === "CENTER" && "center";
-
-    const gap = figmaNode.itemSpacing;
-
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
     const node = {
       constructor: "Layta.Node",
       children: [] as any[],
       id: figmaNode.name,
       visible: figmaNode.visible,
+      position,
+      left,
+      top,
       flexDirection,
       flexWrap,
       justifyContent,
@@ -187,16 +209,16 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
       gap,
       width,
       height,
-      backgroundColor: getBackgroundColor(figmaNode),
-      strokeColor: getStrokeColor(figmaNode),
-      ...getStrokeWeightProps(figmaNode),
-      ...getBorderRadiusProps(figmaNode),
-      ...getPaddingProps(figmaNode)
+      fillColor,
+      strokeColor,
+      ...strokeWeight,
+      ...borderRadius,
+      ...padding
     };
 
     for (const figmaChild of figmaNode.children) {
       try {
-        node.children.push(await createNode(figmaChild, flexDirection === "row", true));
+        node.children.push(await createNode(figmaChild, true, flexDirection === "row", true));
       } catch (e) {
         console.log(e);
       }
@@ -205,24 +227,21 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
     return node;
   }
   else if (figmaNode.type === "GROUP" || figmaNode.type === "COMPONENT") {
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
     const node = {
       constructor: "Layta.Node",
       children: [] as any[],
       id: figmaNode.name,
       visible: figmaNode.visible,
+      position,
+      left,
+      top,
       width,
       height,
     };
 
     for (const figmaChild of figmaNode.children) {
       try {
-        node.children.push(await createNode(figmaChild, true, true));
+        node.children.push(await createNode(figmaChild, false, true, true));
       } catch (e) {
         console.log(e);
       }
@@ -231,31 +250,14 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
     return node;
   }
   else if (figmaNode.type === "INSTANCE") {
-    const layoutMode = figmaNode.layoutMode;
-    const flexDirection = layoutMode === "HORIZONTAL" && "row" || layoutMode === "VERTICAL" && "column";
-
-    const layoutWrap = figmaNode.layoutWrap;
-    const flexWrap = layoutWrap === "NO_WRAP" && "nowrap" || layoutWrap === "WRAP" && "wrap";
-
-    const primaryAxisAlignItems = figmaNode.primaryAxisAlignItems;
-    const justifyContent = primaryAxisAlignItems === "MIN" && "flex-start" || primaryAxisAlignItems === "MAX" && "flex-end" || primaryAxisAlignItems === "CENTER" && "center" || primaryAxisAlignItems === "SPACE_BETWEEN" && "space-between";
-
-    const counterAxisAlignItems = figmaNode.counterAxisAlignItems;
-    const alignItems = counterAxisAlignItems === "MIN" && "stretch" || counterAxisAlignItems === "MAX" && "flex-end" || counterAxisAlignItems === "CENTER" && "center";
-
-    const gap = figmaNode.itemSpacing;
-
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
     const node = {
       constructor: "Layta.Node",
       children: [] as any[],
       id: figmaNode.name,
       visible: figmaNode.visible,
+      position,
+      left,
+      top,
       flexDirection,
       flexWrap,
       justifyContent,
@@ -263,15 +265,15 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
       gap,
       width,
       height,
-      backgroundColor: getBackgroundColor(figmaNode),
-      strokeColor: getStrokeColor(figmaNode),
-      ...getStrokeWeightProps(figmaNode),
-      ...getBorderRadiusProps(figmaNode)
+      backgroundColor: fillColor,
+      strokeColor,
+      ...strokeWeight,
+      ...borderRadius
     };
 
     for (const figmaChild of figmaNode.children) {
       try {
-        node.children.push(await createNode(figmaChild, flexDirection === "row", true));
+        node.children.push(await createNode(figmaChild, false, flexDirection === "row", true));
       } catch (e) {
         console.log(e);
       }
@@ -280,49 +282,38 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
     return node;
   }
   else if (figmaNode.type === "RECTANGLE") {
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
-    const node = {
+    return {
       constructor: "Layta.Node",
       children: [] as any[],
       id: figmaNode.name,
       visible: figmaNode.visible,
+      position,
+      left,
+      top,
       width,
       height,
-      backgroundColor: getBackgroundColor(figmaNode),
-      strokeColor: getStrokeColor(figmaNode),
-      ...getStrokeWeightProps(figmaNode),
-      ...getBorderRadiusProps(figmaNode),
+      backgroundColor: fillColor,
+      strokeColor,
+      ...strokeWeight,
+      ...borderRadius,
     };
-
-    return node;
   }
   else if (figmaNode.type === "TEXT") {
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
     const [fontName, fontSize] = getTextFont(figmaNode);
-
-    const node = {
+    return {
       constructor: "Layta.Text",
       id: figmaNode.name,
       visible: figmaNode.visible,
-      value: figmaNode.characters,
+      position,
+      left,
+      top,
+      text: figmaNode.characters,
       width,
       height,
       foregroundColor: getTextColor(figmaNode),
-      font: `dxCreateFont("${fontName}", ${fontSize}, false, "cleartype_natural") or "default"`,
+      font: `Layta.dxCreateFont("${fontName}", ${fontSize}, false, "cleartype_natural") or "default"`,
       wordWrap: figmaNode.textAutoResize === "HEIGHT"
     };
-
-    return node;
   }
   else {
     throw new Error("Unsupported type: " + figmaNode.type);
