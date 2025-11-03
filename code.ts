@@ -19,7 +19,7 @@ const getBackgroundColor = (figmaNode: SceneNode): number | undefined => {
   return packColor(solid.color.r, solid.color.g, solid.color.b, solid.opacity);
 }
 
-const getBorderRadiusProps = (figmaNode: RectangleNode | FrameNode): Record<string, number> => {
+const getBorderRadiusProps = (figmaNode: RectangleNode | FrameNode | InstanceNode): Record<string, number> => {
   const { topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius } = figmaNode;
   if (topLeftRadius === topRightRadius && topRightRadius === bottomLeftRadius && bottomLeftRadius === bottomRightRadius && topLeftRadius > 0) return { borderRadius: topLeftRadius };
 
@@ -32,7 +32,7 @@ const getBorderRadiusProps = (figmaNode: RectangleNode | FrameNode): Record<stri
   return props;
 }
 
-const getStrokeColor = (figmaNode: SceneNode | RectangleNode | FrameNode): number | undefined => {
+const getStrokeColor = (figmaNode: RectangleNode | FrameNode | InstanceNode): number | undefined => {
   if (!("strokes" in figmaNode)) return;
 
   const strokes = figmaNode.strokes as Paint[];
@@ -42,7 +42,7 @@ const getStrokeColor = (figmaNode: SceneNode | RectangleNode | FrameNode): numbe
   return packColor(solid.color.r, solid.color.g, solid.color.b, solid.opacity);
 }
 
-const getStrokeWeightProps = (figmaNode: RectangleNode | FrameNode): Record<string, number> => {
+const getStrokeWeightProps = (figmaNode: RectangleNode | FrameNode | InstanceNode): Record<string, number> => {
   const { strokeLeftWeight, strokeTopWeight, strokeRightWeight, strokeBottomWeight } = figmaNode;
   if (strokeLeftWeight === strokeTopWeight && strokeTopWeight === strokeRightWeight && strokeRightWeight === strokeBottomWeight && strokeLeftWeight > 0) return { strokeWeight: strokeLeftWeight };
 
@@ -135,11 +135,11 @@ const safelyExport = async (figmaNode: SceneNode): Promise<string> => {
 }
 
 const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = true, parentStretchItems: boolean = true): Promise<object> => {
-  if (figmaNode.type === "FRAME" && figmaNode.children.every(child => child.type === "VECTOR")) {
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
+  if (["FRAME", "GROUP", "COMPONENT", "INSTANCE"].includes(figmaNode.type) && "children" in figmaNode && figmaNode.children.every(child => child.type === "VECTOR")) {
+    const layoutSizingHorizontal = "layoutSizingHorizontal" in figmaNode ? figmaNode.layoutSizingHorizontal : "FIXED";
     const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
 
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
+    const layoutSizingVertical = "layoutSizingVertical" in figmaNode ? figmaNode.layoutSizingVertical : "FIXED";
     const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
 
     const image = {
@@ -154,7 +154,7 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
 
     return image;
   }
-  if (figmaNode.type === "FRAME") {
+  else if (figmaNode.type === "FRAME") {
     const layoutMode = figmaNode.layoutMode;
     const flexDirection = layoutMode === "HORIZONTAL" && "row" || layoutMode === "VERTICAL" && "column";
 
@@ -204,26 +204,7 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
 
     return node;
   }
-  else if (figmaNode.type === "GROUP" && figmaNode.children.every(child => child.type === "VECTOR")) {
-    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
-    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
-
-    const layoutSizingVertical = figmaNode.layoutSizingVertical;
-    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
-
-    const image = {
-      constructor: "Layta.Image",
-      id: figmaNode.name,
-      visible: figmaNode.visible,
-      width,
-      height,
-      foregroundColor: getBackgroundColor(figmaNode),
-      material: `svgCreate(${figmaNode.width}, ${figmaNode.height}, '${(await safelyExport(figmaNode)).replace(/\n/g, "")}')`
-    }
-
-    return image;
-  }
-  else if (figmaNode.type === "GROUP") {
+  else if (figmaNode.type === "GROUP" || figmaNode.type === "COMPONENT") {
     const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
     const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
 
@@ -242,6 +223,55 @@ const createNode = async (figmaNode: SceneNode, parentIsMainAxisRow: boolean = t
     for (const figmaChild of figmaNode.children) {
       try {
         node.children.push(await createNode(figmaChild, true, true));
+      } catch (e) {
+        console.log(e);
+      }
+    };
+
+    return node;
+  }
+  else if (figmaNode.type === "INSTANCE") {
+    const layoutMode = figmaNode.layoutMode;
+    const flexDirection = layoutMode === "HORIZONTAL" && "row" || layoutMode === "VERTICAL" && "column";
+
+    const layoutWrap = figmaNode.layoutWrap;
+    const flexWrap = layoutWrap === "NO_WRAP" && "nowrap" || layoutWrap === "WRAP" && "wrap";
+
+    const primaryAxisAlignItems = figmaNode.primaryAxisAlignItems;
+    const justifyContent = primaryAxisAlignItems === "MIN" && "flex-start" || primaryAxisAlignItems === "MAX" && "flex-end" || primaryAxisAlignItems === "CENTER" && "center" || primaryAxisAlignItems === "SPACE_BETWEEN" && "space-between";
+
+    const counterAxisAlignItems = figmaNode.counterAxisAlignItems;
+    const alignItems = counterAxisAlignItems === "MIN" && "stretch" || counterAxisAlignItems === "MAX" && "flex-end" || counterAxisAlignItems === "CENTER" && "center";
+
+    const gap = figmaNode.itemSpacing;
+
+    const layoutSizingHorizontal = figmaNode.layoutSizingHorizontal;
+    const width = layoutSizingHorizontal === "FIXED" && figmaNode.width || layoutSizingHorizontal === "FILL" && (!parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingHorizontal === "HUG" && "fit-content";
+
+    const layoutSizingVertical = figmaNode.layoutSizingVertical;
+    const height = layoutSizingVertical === "FIXED" && figmaNode.height || layoutSizingVertical === "FILL" && (parentIsMainAxisRow && parentStretchItems && "auto" || "100%") || layoutSizingVertical === "HUG" && "fit-content";
+
+    const node = {
+      constructor: "Layta.Node",
+      children: [] as any[],
+      id: figmaNode.name,
+      visible: figmaNode.visible,
+      flexDirection,
+      flexWrap,
+      justifyContent,
+      alignItems,
+      gap,
+      width,
+      height,
+      backgroundColor: getBackgroundColor(figmaNode),
+      strokeColor: getStrokeColor(figmaNode),
+      ...getStrokeWeightProps(figmaNode),
+      ...getBorderRadiusProps(figmaNode)
+    };
+
+    for (const figmaChild of figmaNode.children) {
+      try {
+        node.children.push(await createNode(figmaChild, flexDirection === "row", true));
       } catch (e) {
         console.log(e);
       }
